@@ -23,7 +23,7 @@ import (
 
 const (
 	key              = "key"
-	singleEvaluation = "/ofrep/v2/evaluate/flags/{key}"
+	singleEvaluation = "/ofrep/v1/evaluate/flags/{key}"
 	bulkEvaluation   = "/ofrep/v1/evaluate/{path:flags\\/|flags}"
 )
 
