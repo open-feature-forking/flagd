@@ -58,7 +58,7 @@ func NewOfrepHandler(
 			MetricRecorder: metricsRecorder,
 			Logger:         logger,
 			HandlerID:      singleEvaluation,
-		}).Handler(http.HandlerFunc(h.HandleFlagEvaluationV2)),
+		}).Handler(http.HandlerFunc(h.HandleFlagEvaluation)),
 	).Methods("POST")
 
 	router.Handle(bulkEvaluation,
@@ -73,7 +73,7 @@ func NewOfrepHandler(
 	return otelhttp.NewHandler(router, "flagd.ofrep")
 }
 
-func (h *handler) HandleFlagEvaluationV2(w http.ResponseWriter, r *http.Request) {
+func (h *handler) HandleFlagEvaluation(w http.ResponseWriter, r *http.Request) {
 	requestID := xid.New().String()
 	defer h.Logger.ClearFields(requestID)
 
@@ -120,7 +120,6 @@ func (h *handler) HandleBulkEvaluation(w http.ResponseWriter, r *http.Request) {
 	selectorExpression := r.Header.Get(service.FLAGD_SELECTOR_HEADER)
 	selector := store.NewSelector(selectorExpression)
 	ctx := context.WithValue(r.Context(), store.SelectorContextKey{}, selector)
-	ctx = context.WithValue(ctx, "protoVersion", "v1")
 
 	evaluations, metadata, err := h.evaluator.ResolveAllValues(ctx, requestID, evaluationContext)
 	if err != nil {
