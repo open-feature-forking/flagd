@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	evaluationV1 "buf.build/gen/go/open-feature/flagd/connectrpc/go/flagd/evaluation/v1/evaluationv1connect"
 	evaluationV2 "buf.build/gen/go/open-feature/flagd/connectrpc/go/flagd/evaluation/v2/evaluationv2connect"
 	schemaConnectV1 "buf.build/gen/go/open-feature/flagd/connectrpc/go/schema/v1/schemav1connect"
 	"github.com/open-feature/flagd/core/pkg/evaluator"
@@ -36,7 +37,8 @@ import (
 const (
 	ErrorPrefix = "FlagdError:"
 
-	flagdSchemaPrefix = "/flagd"
+	flagdSchemaPrefix   = "/flagd"
+	flagdV2SchemaPrefix = "/flagd.evaluation.v2"
 )
 
 // bufSwitchHandler combines the handlers of the old and new evaluation schemas
@@ -44,12 +46,15 @@ const (
 // NOTE: this will not be required anymore when it is time to work on https://github.com/open-feature/flagd/issues/1088
 type bufSwitchHandler struct {
 	old http.Handler
-	new http.Handler
+	v1  http.Handler
+	v2  http.Handler
 }
 
 func (b bufSwitchHandler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
-	if strings.HasPrefix(request.URL.Path, flagdSchemaPrefix) {
-		b.new.ServeHTTP(writer, request)
+	if strings.HasPrefix(request.URL.Path, flagdV2SchemaPrefix) {
+		b.v2.ServeHTTP(writer, request)
+	} else if strings.HasPrefix(request.URL.Path, flagdSchemaPrefix) {
+		b.v1.ServeHTTP(writer, request)
 	} else {
 		b.old.ServeHTTP(writer, request)
 	}
@@ -168,9 +173,9 @@ func (s *ConnectService) setupServer(svcConf service.Configuration) (net.Listene
 
 	_, oldHandler := schemaConnectV1.NewServiceHandler(fes, append(svcConf.Options, marshalOpts)...)
 
-	// register handler for evaluation v2 schema (with optional value and variant)
+	// register handler for new flag evaluation schema (v1)
 
-	newFes := NewFlagEvaluationServiceV2(s.logger.WithFields(zap.String("component", "flagd.evaluation.v2")),
+	v1Fes := NewFlagEvaluationService(s.logger.WithFields(zap.String("component", "flagd.evaluation.v1")),
 		s.eval,
 		s.eventingConfiguration,
 		s.metrics,
@@ -179,11 +184,25 @@ func (s *ConnectService) setupServer(svcConf service.Configuration) (net.Listene
 		svcConf.StreamDeadline,
 	)
 
-	_, newHandler := evaluationV2.NewServiceHandler(newFes, append(svcConf.Options, marshalOpts)...)
+	_, v1Handler := evaluationV1.NewServiceHandler(v1Fes, append(svcConf.Options, marshalOpts)...)
+
+	// register handler for evaluation v2 schema (with optional value and variant)
+
+	v2Fes := NewFlagEvaluationServiceV2(s.logger.WithFields(zap.String("component", "flagd.evaluation.v2")),
+		s.eval,
+		s.eventingConfiguration,
+		s.metrics,
+		svcConf.ContextValues,
+		svcConf.HeaderToContextKeyMappings,
+		svcConf.StreamDeadline,
+	)
+
+	_, v2Handler := evaluationV2.NewServiceHandler(v2Fes, append(svcConf.Options, marshalOpts)...)
 
 	bs := bufSwitchHandler{
 		old: oldHandler,
-		new: newHandler,
+		v1:  v1Handler,
+		v2:  v2Handler,
 	}
 
 	s.serverMtx.Lock()
