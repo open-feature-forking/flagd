@@ -36,8 +36,7 @@ import (
 const (
 	ErrorPrefix = "FlagdError:"
 
-	flagdSchemaPrefix   = "/flagd"
-	flagdV2SchemaPrefix = "/flagd.evaluation.v2"
+	flagdSchemaPrefix = "/flagd"
 )
 
 // bufSwitchHandler combines the handlers of the old and new evaluation schemas
@@ -45,12 +44,12 @@ const (
 // NOTE: this will not be required anymore when it is time to work on https://github.com/open-feature/flagd/issues/1088
 type bufSwitchHandler struct {
 	old http.Handler
-	v1  http.Handler
+	new http.Handler
 }
 
 func (b bufSwitchHandler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	if strings.HasPrefix(request.URL.Path, flagdSchemaPrefix) {
-		b.v1.ServeHTTP(writer, request)
+		b.new.ServeHTTP(writer, request)
 	} else {
 		b.old.ServeHTTP(writer, request)
 	}
@@ -171,7 +170,7 @@ func (s *ConnectService) setupServer(svcConf service.Configuration) (net.Listene
 
 	// register handler for evaluation v2 schema (with optional value and variant)
 
-	v1 := NewFlagEvaluationServiceV2(s.logger.WithFields(zap.String("component", "flagd.evaluation.v2")),
+	newFes := NewFlagEvaluationServiceV2(s.logger.WithFields(zap.String("component", "flagd.evaluation.v2")),
 		s.eval,
 		s.eventingConfiguration,
 		s.metrics,
@@ -180,11 +179,11 @@ func (s *ConnectService) setupServer(svcConf service.Configuration) (net.Listene
 		svcConf.StreamDeadline,
 	)
 
-	_, v1Handler := evaluationV2.NewServiceHandler(v1, append(svcConf.Options, marshalOpts)...)
+	_, newHandler := evaluationV2.NewServiceHandler(newFes, append(svcConf.Options, marshalOpts)...)
 
 	bs := bufSwitchHandler{
 		old: oldHandler,
-		v1:  v1Handler,
+		new: newHandler,
 	}
 
 	s.serverMtx.Lock()
